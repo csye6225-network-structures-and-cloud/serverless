@@ -60,6 +60,7 @@ def lambda_handler(event, context):
 
     try:
         if status == "SUCCESS":
+
             response = requests.get(submission_url)
             file_content = response.content
             response_content_type = response.headers.get('Content-Type')
@@ -67,6 +68,7 @@ def lambda_handler(event, context):
 
             if response.status_code != 200 or not file_content:
                 raise ValueError("Invalid URL or empty content")
+
 
 
             timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
