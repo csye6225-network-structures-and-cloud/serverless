@@ -23,6 +23,7 @@ def lambda_handler(event, context):
     logger.info("message: %s", message)
 
     # Extract submission_url and user_email
+    attempts = int(message['attempts'])
     status=message['status']
     submission_url = message['submissionUrl']
     user_email = message['userEmail']
@@ -31,7 +32,7 @@ def lambda_handler(event, context):
     logger.info("submission_url: %s", submission_url)
     logger.info("user_email: %s", user_email)
     logger.info("assignment_id: %s", assignment_id)
-
+    logger.info("attempts : %d", attempts)
 
      
 
@@ -55,12 +56,15 @@ def lambda_handler(event, context):
     logger.info("GCP_BUCKET_NAME: " + os.environ['GCP_BUCKET_NAME'])
     source_email = os.environ.get('FROM_ADDRESS')
     logger.info("source_email : %s", source_email)
-
+    
 
     try:
         if status == "SUCCESS":
             response = requests.get(submission_url)
             file_content = response.content
+            response_content_type = response.headers.get('Content-Type')
+            logger.info("Response Content-Type: %s", response_content_type)
+
             if response.status_code != 200 or not file_content:
                 raise ValueError("Invalid URL or empty content")
 
@@ -70,18 +74,19 @@ def lambda_handler(event, context):
             unique_file_name = f"submission_{timestamp}.zip"
             full_path = directory_path + unique_file_name
             blob = bucket.blob(full_path)
-            blob.upload_from_string(file_content)
+            blob.upload_from_string(file_content, content_type="application/zip")
             logger.info("full_path : %s", full_path)
 
 
             logger.info("Sending Email")
             # Send success email
-            send_email(user_email, submission_url, assignment_id, source_email,errorMessage, "Submission Received - Canvas",
-                    "We are pleased to inform you that your submission for the assignment and has been successfully received and processed." )
+            send_email(user_email,full_path, assignment_id, source_email,errorMessage, "Submission Received - Canvas",
+                    "Your submission has been successfully received." )
 
             logger.info("Email Sent and updating dynamo DB")
             # Update DynamoDB
             update_dynamodb(user_email, assignment_id, submission_url, full_path, timestamp)
+            # update_dynamodb(user_email, assignment_id, submission_url)
 
             logger.info("Table updated")
         else:
@@ -89,11 +94,13 @@ def lambda_handler(event, context):
 
     except Exception as e:
         logger.error(f"Error in processing submission: {e}")
-        send_email(user_email, submission_url, assignment_id, source_email, errorMessage,"Submission Error - Canvas",
+        send_email(user_email,"N/A", assignment_id, source_email, errorMessage,"Submission Error - Canvas",
                    "There was an error with your submission. Please check the submission rules")
+        
+        # update_dynamodb(user_email, assignment_id, submission_url, full_path, timestamp)
     
 
-def send_email(user_email, submission_url, assignment_id, source_email,errorMessage, subject, body):
+def send_email(user_email,full_path ,assignment_id, source_email,errorMessage, subject, body):
     # Send Email to the user
     ses_client = boto3.client('ses')
     email_body = f"""
@@ -104,15 +111,16 @@ def send_email(user_email, submission_url, assignment_id, source_email,errorMess
     {body}
 
     - Assignment ID: {assignment_id}
-    - Submission URL: {submission_url}
+    - Submission Path: {full_path}
      
-    Should you have any questions or need further assistance, please feel free to contact us at info@demo.supriyavallarapu.me. 
+    Should you have any questions or need further assistance,
+    please feel free to contact us at info@demo.supriyavallarapu.me. 
 
     We appreciate your effort and time.
 
     Best regards,
-    The Canvas Team
-    """.format(user_email=user_email, submission_url=submission_url, assignment_id=assignment_id, errorMessage=errorMessage)
+    Department of College of Engineering 
+    """.format(user_email=user_email, full_path=full_path, assignment_id=assignment_id, errorMessage=errorMessage)
 
 
     ses_client.send_email(

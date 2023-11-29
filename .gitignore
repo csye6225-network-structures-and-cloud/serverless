@@ -28,6 +28,8 @@
 .vscode/
 .idea/
 
+lambda-env/
+
 # Vagrant
 .vagrant/
 
